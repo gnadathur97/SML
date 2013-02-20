@@ -52,8 +52,6 @@ fun lookup(n, ENV((n1, c1)::t)) = if (n = n1) then c1 else lookup(n, ENV t);
 
 
 
-val testenv = ENV [(name "a", CLOS (ival 6, ENV [])), (name "b", CLOS (ival 7, ENV []))];
-
 (**** INTERP FUNCTION ****)
 
 fun interp (ival i, e) = CLOS(ival  i, e) 
