@@ -8,19 +8,20 @@ exception Impossible; (* for when invalid arguments get past type checking *)
 datatype builtin = ADD | SUBTRACT | MULTIPLY | AND | OR;
             
 datatype expr = ival of int 
-		      | bval of bool 
-		      | opexp of builtin * expr * expr
-		      | eqexp of expr * expr 
-		      | name of string 
-		      | ifexp of expr * expr * expr 
-		      | func of expr list * expr 
-		      | apply of expr * expr list 
-		      | letexp of (expr * expr) list * expr 
-		      | null
-		      | cons of expr * expr
-		      | closexp of clos
-		      | letrec of (expr * expr) list * expr
-and env = ENV of (expr * clos) list
+              | bval of bool 
+              | opexpi of builtin * expr * expr
+              | opexpb of builtin * expr * expr
+              | eqexp of expr * expr 
+              | name of string 
+              | ifexp of expr * expr * expr 
+              | func of expr list * expr 
+              | apply of expr * expr list 
+              | letexp of (expr * expr) list * expr 
+              | null
+              | cons of expr * expr
+              | closexp of clos
+              | letrec of (expr * expr) list * expr
+and env = ENV of (expr * clos option ref) list
 and clos = CLOS of expr * env;
 
 
@@ -34,10 +35,10 @@ and clos = CLOS of expr * env;
 val fact = func ([name "x"], 
                  ifexp (eqexp (name "x", ival 0), 
                         ival 1, 
-                        opexp (MULTIPLY,
+                        opexpi (MULTIPLY,
                                name "x", 
                                apply (name "fact", 
-                                      [opexp (SUBTRACT, name "x", ival 1)] ))));
+                                      [opexpi (SUBTRACT, name "x", ival 1)] ))));
 
 (* map *)
 val map = func([name "f", name "l"], 
@@ -69,18 +70,33 @@ val reverse = func([name "l"],
 
 
 
+(**** HELPER FUNCTIONS ****)
 
-(**** ENVIRONMENT HELPER FUNCTIONS ****)
-
-fun update(n, c, ENV nil) = ENV [(n, c)] | update(n, c, ENV l) = ENV((n, c)::l); 
+fun update(n, c, ENV nil) = ENV [(n, ref (SOME c))] 
+  | update(n, c, ENV l) = ENV((n, ref (SOME c))::l); 
+  
+fun updatenull(n, ENV nil) = ENV [(n, ref NONE)] 
+  | updatenull(n, ENV l) = ENV((n, ref NONE)::l);
+  
+fun replace(n, newclos, ENV nil) = raise Impossible
+  | replace(n, newclos, ENV((n1, cref)::t)) = 
+        if (n = n1) then cref := newclos else replace(n, newclos, ENV t);
 
 fun lookup(n, ENV(nil)) = raise Impossible
-  | lookup(n, ENV((n1, c1)::t)) = if (n = n1) then c1 else lookup(n, ENV t);
+  | lookup(n, ENV((n1, ref (SOME c1))::t)) = 
+        if (n = n1) then c1 else lookup(n, ENV t);
   
 fun combine(h::t, nil) = raise Impossible
   | combine(nil, h::t) = raise Impossible
   | combine(nil, nil) = nil
-  | combine(n::t1, c::t2) = (n, c)::combine(t1, t2);
+  | combine(n::t1, c::t2) = (n, ref (SOME c))::combine(t1, t2);
+  
+fun speciali(ADD, i1, i2) = i1 + i2
+  | speciali(SUBTRACT, i1, i2) = i1 - i2
+  | speciali(MULTIPLY, i1, i2) = i1 * i2;
+  
+fun specialb(AND, b1, b2) = b1 andalso b2
+  | specialb(OR, b1, b2) = b1 orelse b2;
 
 
 
@@ -88,30 +104,15 @@ fun combine(h::t, nil) = raise Impossible
 
 fun interp (ival i, e) = CLOS(ival  i, e) 
   | interp (bval b, e) = CLOS(bval b, e) 
-  | interp (opexp (ADD, exp1, exp2), env) = 
+  | interp (opexpi (operator, exp1, exp2), env) = 
         let val CLOS(ival v1, _) = interp (exp1, env) 
-		    val CLOS(ival v2, _) = interp (exp2, env) 
-		in CLOS(ival (v1 + v2), env)
+            val CLOS(ival v2, _) = interp (exp2, env) 
+		in CLOS(ival (speciali (operator, v1, v2)), env)
 		end
-  | interp (opexp (SUBTRACT, exp1, exp2), env) = 
-		let val CLOS(ival v1, _) = interp (exp1, env) 
-		    val CLOS(ival v2, _) = interp (exp2, env)
-		in CLOS(ival (v1 - v2), env)
-		end
-  | interp (opexp (MULTIPLY, exp1, exp2), env) = 
-		let val CLOS(ival v1, _) = interp (exp1, env) 
-		    val CLOS(ival v2, _) = interp (exp2, env)
-		in CLOS(ival (v1 * v2), env)
-		end 
-  | interp (opexp (AND, exp1, exp2), env) = 
+  | interp (opexpb (operator, exp1, exp2), env) = 
 		let val CLOS (bval v1, _) = interp (exp1, env) 
 		    val CLOS (bval v2, _) = interp (exp2, env) 
-		in CLOS(bval (v1 andalso v2), env)
-		end
-  | interp (opexp (OR, exp1, exp2), env) = 
-		let val CLOS (bval v1, _) = interp (exp1, env) 
-		    val CLOS (bval v2, _) = interp (exp2, env) 
-		in CLOS(bval (v1 orelse v2), env)
+		in CLOS(bval (specialb (operator, v1, v2)), env)
 		end
   | interp (eqexp (exp1, exp2), env) = 
 		let val CLOS (ival v1, _) = interp (exp1, env) 
@@ -148,37 +149,28 @@ fun interp (ival i, e) = CLOS(ival  i, e)
 		    val clos2 = interp(e2, env)
 		in CLOS(cons (closexp clos1, closexp clos2), env)
 		end
-  | interp (closexp C, env) = C;
-
-
-(* letrec will require that env be defined as 
-   env = ENV of (expr * clos option ref) list *)
-   
+  | interp (closexp C, env) = C  
   | interp (letrec (l, e), env) =
-	   (* STEP 1: update all the names in the list to point to null *)
-       let fun setvars(nil, env) = env 
-             | setvars ((n1, e1)::t, env) = update(n1, ref NONE);
-           val env' = setvars(l, env)
-       (* STEP 2: process lets using env' as environment *)
-       
+       let fun updatenull'(nil, env) = env 
+             | updatenull'((n1, e1)::t, env) = updatenull'(t, updatenull(n1, env))
+           val env' = updatenull'(l, env)
+           fun replace'(nil, env', returnval) = ()
+             | replace'((n1, e1)::t, env', returnval) = 
+                   replace'(t, env', replace(n1, SOME (interp (e1, env')), env'))
+           val temp = replace'(l, env', ())
+       in interp (e, env')
+       end;
 
 
 
-(*** NOTES/TODO ***)
+(*** MISCELLANEOUS ***)
 
 (* Still need to add in a 'special' function to handle predefined 
    functions like 'head' and 'remaining' *)
-(* Something along the lines of the following may be another 
-   way to handle opexp types in the interp function:
-  
-  | interp (opexp (operator, exp1, exp2), env) = 
-        let val CLOS(ival v1, _) = interp (exp1, env) 
-		    val CLOS(ival v2, _) = interp (exp2, env) 
-		in if (operator = ADD) 
-		   then CLOS(ival (v1 + v2), env)
-		   else if (operator = SUBTRACT)
-		        then CLOS(ival (v1 - v2), env)
-		        else if (operator = MULTIPLY)
-		             then CLOS(ival (v1 * v2), env)
-		             else raise Impossible
-        end   *)
+   
+(* To test the factorial function:
+   
+   val testenv = ENV [] : env;
+   val recursivelet = letrec ([(name "fact", fact)], apply (name "fact", [ival 0]));
+   interp(recursivelet, testenv);
+*)
