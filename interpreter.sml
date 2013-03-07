@@ -36,10 +36,9 @@ val fact = func ([name "x"],
                  ifexp (eqexp (name "x", ival 0), 
                         ival 1, 
                         opexpi (MULTIPLY,
-                               name "x", 
-                               apply (name "fact", 
-                                      [opexpi (SUBTRACT, name "x", ival 1)] ))));
-
+                                name "x", 
+                                apply (name "fact", 
+                                      [opexpi (SUBTRACT, name "x", ival 1)]))));
 (* map *)
 val map = func([name "f", name "l"], 
                ifexp (apply (name "isempty", [name "l"]), 
@@ -48,7 +47,6 @@ val map = func([name "f", name "l"],
                                    [apply (name "head", [name "l"])]), 
                             apply (name "map", 
                                    [name "f", apply (name "remaining", [name "l"])]))));
-
 (* append *)
 val append = func([name "l1", name "l2"], 
                   ifexp (apply (name "isempty", [name "l1"]), 
@@ -57,7 +55,6 @@ val append = func([name "l1", name "l2"],
                                apply (name "append", 
                                       [apply (name "remaining", 
                                               [name "l1"]), name "l2"]))));
-
 (* reverse *)
 val reverse = func([name "l"], 
                    ifexp (apply (name "isempty", [name "l"]), 
@@ -167,10 +164,3 @@ fun interp (ival i, e) = CLOS(ival  i, e)
 
 (* Still need to add in a 'special' function to handle predefined 
    functions like 'head' and 'remaining' *)
-   
-(* To test the factorial function:
-   
-   val testenv = ENV [] : env;
-   val recursivelet = letrec ([(name "fact", fact)], apply (name "fact", [ival 0]));
-   interp(recursivelet, testenv);
-*)
