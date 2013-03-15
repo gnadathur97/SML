@@ -81,12 +81,13 @@ val myreverse = func([name "l"],
                             apply (name "a", 
                                    [apply (name "r", 
                                            [remaining (name "l")]),
-                                   head (name "l")])));
+                                   cons (head (name "l"), null)])));
 (* Test case:
    val testlist = cons(ival 1, cons(ival 2, cons(ival 3, null)));
    val recurslet = letrec([(name "r", myreverse), (name "a", myappend)], 
-                          apply (name "r", [testlist1]));                     
+                          apply (name "r", [testlist]));                     
    val CLOS(x, _) = interp(recurslet, ENV []); *) 
+
 
 
 (**** HELPER FUNCTIONS ****)
