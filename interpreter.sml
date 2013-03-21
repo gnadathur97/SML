@@ -26,6 +26,10 @@ datatype expr = ival of int
               | letexp of (expr * expr) list * expr   
               | closexp of clos
               | letrec of (expr * expr) list * expr
+              | econst of int * int
+              | ecase of expr * alt list
+              | union of expr * (expr list)
+and alt = ALT of int * (expr list) * expr
 and env = ENV of (expr * clos option ref) list
 and clos = CLOS of expr * env;
 
@@ -190,7 +194,22 @@ fun interp (ival i, e) = CLOS(ival  i, e)
                    replace'(t, env', replace(n1, SOME (interp (e1, env')), env'))
            val temp = replace'(rev l, env', ())
        in interp (e, env')
-       end;
+       end   
+  | interp (econst (tag, arity), env) = CLOS (econst(tag, arity), env)
+  | interp (ecase (e, altl), env) =
+        let fun lookupalt(tag, exprl, nil) = raise Impossible
+              | lookupalt(tag, exprl, (ALT(tag', argl, e))::tl) =
+                    if tag = tag' 
+                    then let val ENV env' = env
+                             val closl = map (fn x => interp(x, env)) exprl
+                             val env'' = combine(argl, closl)
+                         in interp(e, ENV(env'' @ env'))
+                         end
+                    else lookupalt(tag, exprl, tl)
+            val union(econst(t, _), l) = e  (*find the tag/arguments of the econst*)
+        in lookupalt(t, l, altl)
+        end
+  | interp (union (e,l), env) = CLOS (union (e,l), env);
     
        
 
