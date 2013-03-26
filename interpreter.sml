@@ -193,13 +193,13 @@ val mymap = func([name "f", name "l"],
 
 (* append *)
 val myappend = func([name "l1", name "l2"],
-                  ifexp (apply (isempty, [name "l1"]), 
-                         name "l2", 
-                         apply (cons,
-                               [apply (head, [name "l1"]),
-                                apply (name "a", 
-                                       [apply (remaining, [name "l1"]), 
-                                        name "l2"])])))
+                    ifexp (apply (isempty, [name "l1"]), 
+                           name "l2", 
+                           apply (cons,
+                                 [apply (head, [name "l1"]),
+                                  apply (name "a", 
+                                         [apply (remaining, [name "l1"]), 
+                                          name "l2"])])))
 val myappend = func([name "l1", name "l2"], 
                     ecase (name "l1",
                            [ALT (0, [], name "l2"),
@@ -223,20 +223,21 @@ val myappend = func([name "l1", name "l2"],
 
 (* reverse *)
 val myreverse = func([name "l"], 
-                   ifexp (apply (isempty, [name "l"]), 
-                          name "l", 
-                          apply (name "a", 
-                                 [apply (name "r", 
-                                         [apply (remaining, [name "l"])]), 
-                                  apply (head, [name "l"])])))
+                     ifexp (apply (isempty, [name "l"]), 
+                            name "l", 
+                            apply (name "a", 
+                                   [apply (name "r", 
+                                           [apply (remaining, [name "l"])]), 
+                                    apply (cons, [apply (head, [name "l"]), 
+                                           null])])))
 val myreverse = func([name "l"], 
-                   ecase (name "l",
-                          [ALT (0, [], name "l"),
-                           ALT (1, 
-                                [name "h", name "t"], 
-                                apply (name "a", 
-                                       [apply (name "r", [name "t"]), 
-                                        name "h"]))]))
+                     ecase (name "l",
+                            [ALT (0, [], name "l"),
+                             ALT (1, 
+                                  [name "h", name "t"], 
+                                  apply (name "a", 
+                                         [apply (name "r", [name "t"]), 
+                                          apply(cons, [name "h", null])]))]))
 (* reverse test case:
    val testlist = apply(cons, 
                         [ival 1, apply(cons, 
@@ -246,3 +247,7 @@ val myreverse = func([name "l"],
                           apply (name "r", [testlist]))                     
    val x = interp(recurslet, ENV [])
 *)
+
+
+(*** todo: address all 'match-nonexhaustive' warnings 
+     in the helper function section ***)
