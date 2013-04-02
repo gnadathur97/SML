@@ -11,6 +11,7 @@ exception Contradiction
 (* Question: is it necessary to specify that app's first argument is a constr? *)
 
 
+
 (*** INSTANCE OF ***)
 (* function to check if one type is an instance of another *)
 
@@ -90,10 +91,24 @@ fun unity t1 t2 =
         end
 
 
-                  
-(* test cases *)             
-val t1 = arrow(var "alpha", arrow(arrow(int, int), bool))
+
+(*** TEST CASES ***)                  
+(* test case 1-- instanceof: true, equaltype: false, unity: true *)             
+val t1 = arrow(int, arrow(arrow(int, int), bool))
 val t2 = arrow(var "alpha", var "beta")
-val t3 = arrow(var "delta", var "gamma")
-val t4 = arrow(var "beta", bool)
-val t5 = arrow(arrow(int, int), var "alpha")
+
+(* test case 2-- instanceof: true, equaltype: true, unity: true *)
+val t3 = arrow(arrow(var "alpha", var "beta"), var "alpha")
+val t4 = arrow(arrow(var "delta", var "gamma"), var "delta")
+
+(* test case 3-- instanceof: false, equaltype: false, unity: true *)
+val t5 = arrow(var "beta", bool)
+val t6 = arrow(arrow(int, int), var "alpha")
+
+(* test case 4-- instanceof: false, equaltype: false, unity: false *)
+val t7 = bool
+val t8 = arrow(var "alpha", int)
+
+(* test case 5-- using constr and app *)
+val t9 = app(constr(1,3), [int, bool, var "alpha"])
+val t10 = app(constr(1,3), [var "x", var "y", var "z"])

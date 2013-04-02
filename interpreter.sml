@@ -41,6 +41,7 @@ fun replace(n, newexp, ENV nil) = raise Impossible
 fun lookup(n, ENV(nil)) = raise Impossible
   | lookup(n, ENV((n1, ref (SOME e1))::t)) = 
         if (n = n1) then e1 else lookup(n, ENV t)
+  | lookup(n, ENV((n1, ref NONE)::t)) = raise Impossible
   
 fun combine(h::t, nil) = raise Impossible
   | combine(nil, h::t) = raise Impossible
@@ -50,9 +51,11 @@ fun combine(h::t, nil) = raise Impossible
 fun speciali(ADD, i1, i2) = i1 + i2
   | speciali(SUBTRACT, i1, i2) = i1 - i2
   | speciali(MULTIPLY, i1, i2) = i1 * i2
+  | speciali(_, i1, i2) = raise Impossible
   
 fun specialb(AND, b1, b2) = b1 andalso b2
   | specialb(OR, b1, b2) = b1 orelse b2
+  | specialb(_, b1, b2) = raise Impossible
   
 
 
@@ -247,7 +250,3 @@ val myreverse = func([name "l"],
                           apply (name "r", [testlist]))                     
    val x = interp(recurslet, ENV [])
 *)
-
-
-(*** todo: address all 'match-nonexhaustive' warnings 
-     in the helper function section ***)
