@@ -1,14 +1,13 @@
 (* TYPE DECLARATIONS *)
-datatype ty = int
-            | bool
+datatype ty = const of string
             | var of string
             | constr of int * int
             | arrow of ty * ty
             | app of ty * ty list
+type subst = (string * ty) list
 
 exception Contradiction
-
-(* Question: is it necessary to specify that app's first argument is a constr? *)
+exception Impossible
 
 
 
@@ -65,50 +64,74 @@ fun equaltype t1 t2 =
 (* function to check if two types can be reduced to a common type, 
    the result is true/false and the necessary substitutions *)
 
-fun unity t1 t2 = 
+fun unify nil = (false, nil)
+  | unify typelist = 
         let fun contradicts v1 v2 nil = false
               | contradicts v1 v2 ((v1',v2')::t) = 
                     if (v1 = v1')
                     then if (v2 = v2') then false else true
                     else (contradicts v1 v2 t)
-            fun unity' t (var n) slist = 
+            fun contains v1 v2 nil = false
+              | contains v1 v2 ((v1',v2')::t) = 
+                    if ((v1 = v1') andalso (v2 = v2'))
+                    then true
+                    else (contains v1 v2 t)
+            fun unify' (var n1) (var n2) slist =
+                    if ((contradicts n1 (var n2) slist) 
+                            orelse (contradicts n2 (var n1) slist))
+                    then raise Contradiction
+                    else if (contains n1 (var n2) slist)
+                         then if (contains n2 (var n1) slist)
+                              then slist
+                              else ((n2, (var n1))::slist)
+                         else if (contains n2 (var n1) slist)
+                              then ((n1, (var n2))::slist)
+                              else ((n1, (var n2))::(n2, (var n1))::slist)
+              | unify' t (var n) slist = 
                     if (contradicts n t slist) 
                     then raise Contradiction 
-                    else (n, t)::slist
-              | unity' (var n) t slist = 
+                    else if (contains n t slist)
+                         then slist
+                         else ((n, t)::slist)
+              | unify' (var n) t slist = 
                     if (contradicts n t slist)
                     then raise Contradiction
-                    else (n, t)::slist
-              | unity' (arrow(t1, t2)) (arrow(t1', t2')) slist = 
-                    (unity' t1 t1' (unity' t2 t2' slist))
-              | unity' (app(t, nil)) (app(t', nil)) slist = 
-                    (unity' t t' slist)
-              | unity' (app(t, h::tl)) (app(t', h'::tl')) slist =
-                    (unity' h h'(unity' (app(t,tl)) (app(t',tl')) slist))
-              | unity' t1 t2 slist =
+                    else if (contains n t slist)
+                         then slist
+                         else ((n, t)::slist)
+              | unify' (arrow(t1, t2)) (arrow(t1', t2')) slist = 
+                    (unify' t1 t1' (unify' t2 t2' slist))
+              | unify' (app(t, nil)) (app(t', nil)) slist = 
+                    (unify' t t' slist)
+              | unify' (app(t, h::tl)) (app(t', h'::tl')) slist =
+                    (unify' h h'(unify' (app(t,tl)) (app(t',tl')) slist))
+              | unify' t1 t2 slist =
                     if t1 = t2 then slist else raise Contradiction
-        in (true, (unity' t1 t2 nil)) handle Contradiction => (false, nil)
+            fun unify'' nil slist = slist
+              | unify'' ((t1, t2)::tl) slist = (unify'' tl (unify' t1 t2 slist))
+        in (true, (unify'' typelist nil)) handle Contradiction => (false, nil)
         end
-
+        
+        
 
 
 (*** TEST CASES ***)                  
-(* test case 1-- instanceof: true, equaltype: false, unity: true *)             
-val t1 = arrow(int, arrow(arrow(int, int), bool))
+(* test case 1-- instanceof: true, equaltype: false, unify: true *)             
+val t1 = arrow(const "int", arrow(arrow(const "int", const "int"), const "bool"))
 val t2 = arrow(var "alpha", var "beta")
 
-(* test case 2-- instanceof: true, equaltype: true, unity: true *)
+(* test case 2-- instanceof: true, equaltype: true, unify: true *)
 val t3 = arrow(arrow(var "alpha", var "beta"), var "alpha")
 val t4 = arrow(arrow(var "delta", var "gamma"), var "delta")
 
-(* test case 3-- instanceof: false, equaltype: false, unity: true *)
-val t5 = arrow(var "beta", bool)
-val t6 = arrow(arrow(int, int), var "alpha")
+(* test case 3-- instanceof: false, equaltype: false, unify: true *)
+val t5 = arrow(var "beta", const "bool")
+val t6 = arrow(arrow(const "int", const "int"), var "alpha")
 
-(* test case 4-- instanceof: false, equaltype: false, unity: false *)
-val t7 = bool
-val t8 = arrow(var "alpha", int)
+(* test case 4-- instanceof: false, equaltype: false, unify: false *)
+val t7 = const "bool"
+val t8 = arrow(var "alpha", const "int")
 
 (* test case 5-- using constr and app *)
-val t9 = app(constr(1,3), [int, bool, var "alpha"])
+val t9 = app(constr(1,3), [const "int", const "bool", var "alpha"])
 val t10 = app(constr(1,3), [var "x", var "y", var "z"])
