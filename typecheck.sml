@@ -6,6 +6,7 @@ datatype ty = const of string
             | app of ty * ty list
 type subst = (string * ty) list
 exception Contradiction
+exception Impossible
 
 
 
@@ -24,6 +25,14 @@ fun contradicts (v1 : string) (v2 : ty) (nil : subst) = false
         if (v1 = v1')
         then if (v2 = v2') then false else true
         else (contradicts v1 v2 t)
+        
+(* applies a substitution to a variable *)
+fun applysubst (var n) (nil : subst) = (var n)
+  | applysubst (var n) ((n',t')::tl) = 
+        if (n = n')
+        then t'
+        else (applysubst (var n) tl)
+ | applysubst _ _ = raise Impossible
 
 
 
