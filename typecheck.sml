@@ -5,9 +5,25 @@ datatype ty = const of string
             | arrow of ty * ty
             | app of ty * ty list
 type subst = (string * ty) list
-
 exception Contradiction
-exception Impossible
+
+
+
+(*** HELPER FUNCTIONS **)
+
+(* checks if a substitution is currently in the substitutions list *)
+fun contains (v1 : string) (v2 : ty) (nil : subst) = false
+  | contains v1 v2 ((v1',v2')::t) = 
+        if ((v1 = v1') andalso (v2 = v2'))
+        then true
+        else (contains v1 v2 t)
+        
+(* checks if a substitution contradicts the current substitutions *)
+fun contradicts (v1 : string) (v2 : ty) (nil : subst) = false
+  | contradicts v1 v2 ((v1',v2')::t) = 
+        if (v1 = v1')
+        then if (v2 = v2') then false else true
+        else (contradicts v1 v2 t)
 
 
 
@@ -21,7 +37,7 @@ fun instanceof t (var s) = true
   | instanceof (app(t, h::tl)) (app(t', h'::tl')) =
         (instanceof h h') andalso (instanceof (app(t, tl)) (app(t', tl')))
   | instanceof t1 t2 = if t1 = t2 then true else false
-
+        
 
 
 (*** EQUAL TYPE ***)
@@ -29,24 +45,17 @@ fun instanceof t (var s) = true
    named, its results is true/false and a list of name replacements *)
 
 fun equaltype t1 t2 = 
-        let (* check if a replacement is in list *)
-            fun containsr v1 v2 nil = false
-              | containsr v1 v2 ((v1',v2')::t) = 
-                    if ((v1 = v1') andalso (v2 = v2'))
-                    then true
-                    else (containsr v1 v2 t)
-            (* check if a replacement contradicts the current replacements *)
-            fun contradictsr v1 v2 nil = false
-              | contradictsr v1 v2 ((v1',v2')::t) = 
-                    if (v1 = v1')
-                    then if (v2 = v2') then false else true
-                    else (contradictsr v1 v2 t)
-            fun equaltype' (var s1) (var s2) rlist = 
-                    if (contradictsr s1 s2 rlist) 
+        let fun equaltype' (var s1) (var s2) rlist = 
+                    if ((contradicts s1 (var s2) rlist) 
+                            orelse (contradicts s2 (var s1) rlist))
                     then raise Contradiction
-                    else if (containsr s1 s2 rlist) 
-                         then rlist
-                         else (s1,s2)::rlist
+                    else if (contains s1 (var s2) rlist)
+                         then if (contains s2 (var s1) rlist)
+                              then rlist
+                              else ((s2, (var s1))::rlist)
+                         else if (contains s2 (var s1) rlist)
+                              then ((s1, (var s2))::rlist)
+                              else ((s1, (var s2))::(s2, (var s1))::rlist)
               | equaltype' (arrow(t1, t2)) (arrow(t1', t2')) rlist = 
                     (equaltype' t1 t1' (equaltype' t2 t2' rlist))
               | equaltype' (app(t, nil)) (app(t', nil)) rlist = 
@@ -60,23 +69,13 @@ fun equaltype t1 t2 =
 
 
 
-(*** UNITY ***)
+(*** UNIFY ***)
 (* function to check if two types can be reduced to a common type, 
    the result is true/false and the necessary substitutions *)
 
 fun unify nil = (false, nil)
   | unify typelist = 
-        let fun contradicts v1 v2 nil = false
-              | contradicts v1 v2 ((v1',v2')::t) = 
-                    if (v1 = v1')
-                    then if (v2 = v2') then false else true
-                    else (contradicts v1 v2 t)
-            fun contains v1 v2 nil = false
-              | contains v1 v2 ((v1',v2')::t) = 
-                    if ((v1 = v1') andalso (v2 = v2'))
-                    then true
-                    else (contains v1 v2 t)
-            fun unify' (var n1) (var n2) slist =
+        let fun unify' (var n1) (var n2) slist =
                     if ((contradicts n1 (var n2) slist) 
                             orelse (contradicts n2 (var n1) slist))
                     then raise Contradiction
@@ -111,7 +110,6 @@ fun unify nil = (false, nil)
               | unify'' ((t1, t2)::tl) slist = (unify'' tl (unify' t1 t2 slist))
         in (true, (unify'' typelist nil)) handle Contradiction => (false, nil)
         end
-        
         
 
 
