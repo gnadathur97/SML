@@ -1,4 +1,6 @@
-(* TYPE DECLARATIONS *)
+(*** TYPE DECLARATIONS ***)
+
+(* type datatype *)
 datatype ty = const of string
             | var of string
             | constr of int * int
@@ -8,9 +10,24 @@ type subst = (string * ty) list
 exception Contradiction
 exception Impossible
 
+(* pre-abstract syntax datatype *)
+datatype builtin = ADD | SUBTRACT | MULTIPLY | AND | OR
+datatype preexpr = ival of int 
+                 | bval of bool 
+                 | opexpi of builtin * preexpr * preexpr
+                 | opexpb of builtin * preexpr * preexpr
+                 | eqexp of preexpr * preexpr 
+                 | name of string 
+                 | ifexp of preexpr * preexpr * preexpr 
+              (* temporarily ignoring the following:
+                 | func of preexpr list * preexpr 
+                 | apply of preexpr * preexpr list
+                 | econst of int * int
+                 | ecase of preexpr * alt list *)
 
 
-(*** HELPER FUNCTIONS **)
+
+(*** HELPER FUNCTIONS ***)
 
 (* checks if a substitution is currently in the substitutions list *)
 fun contains (v1 : string) (v2 : ty) (nil : subst) = false
@@ -33,6 +50,9 @@ fun applysubst (var n) (nil : subst) = (var n)
         then t'
         else (applysubst (var n) tl)
  | applysubst _ _ = raise Impossible
+ 
+(* will instantiate one type with another *)
+fun instant (var n) (var n') = (var n')
 
 
 
@@ -122,7 +142,110 @@ fun unify nil = (false, nil)
         
 
 
-(*** TEST CASES ***)                  
+(*** EXPRESSION CHECKER ***)
+(* a function to check the type of a provided pre-expression *)
+
+(* Description: tycheckexp : preexp * tyenv * tyenv * subst * ty -> subst
+   preexp-- the expression we want to check
+   tyenv-- gamma, the local type environment
+   tyenv-- sigma, the global type environment
+   subst-- the current substitution list
+   ty-- the expected type of preexp, what we want to check against
+   subt-- tycheckexp returns a substitution *)
+(* Note that ultimately there will be another function that will just return 
+   true and a substitution list or false and an empty list *)
+
+fun tycheckexp (ival i) g s slist (var n) = 
+        if (contradicts n (const "int") slist)
+        then raise Contradiction
+        else if (contains n (const "int") slist)
+             then slist
+             else (n, (const "int"))::slist
+  | tycheckexp (ival i) g s slist (const n) =
+        if (n = "int") 
+        then slist
+        else raise Contradiction
+  | tycheckexp (bval b) g s slist (var n) =
+        if (contradicts n (const "bool") slist)
+        then raise Contradiction
+        else if (contains n (const "bool") slist)
+             then slist
+             else (n, (const "bool"))::slist
+  | tycheckexp (bval b) g s slist (const n) =
+        if (n = "bool") 
+        then slist
+        else raise Contradiction
+  | tycheckexp (opexpi (_, v1, v2)) g s slist (var n) =
+        if (contradicts n (const "int") slist)
+        then raise Contradiction
+        else let val s1 = tycheckexp v1 g s slist (const "int")
+                 val s2 = tycheckexp v2 g s s1 (const "int")
+             in if (contains n (const "int") s2)
+                then s2
+                else (n, (const "int"))::s2
+             end
+  | tycheckexp (opexpi (_, v1, v2)) g s slist (const n) =
+        if (n = "int")
+        then let val s1 = tycheckexp v1 g s slist (const "int")
+                 val s2 = tycheckexp v2 g s s1 (const "int")
+             in s2
+             end
+        else raise Contradiction
+  | tycheckexp (opexpb (_, v1, v2)) g s slist (var n) =
+        if (contradicts n (const "bool") slist)
+        then raise Contradiction
+        else let val s1 = tycheckexp v1 g s slist (const "bool")
+                 val s2 = tycheckexp v2 g s s1 (const "bool")
+             in if (contains n (const "bool") s2)
+                then s2
+                else (n, (const "bool"))::s2
+             end
+  | tycheckexp (opexpb (_, v1, v2)) g s slist (const n) =
+        if (n = "bool")
+        then let val s1 = tycheckexp v1 g s slist (const "bool")
+                 val s2 = tycheckexp v2 g s s1 (const "bool")
+             in s2
+             end
+        else raise Contradiction        
+  | tycheckexp (eqexp (v1, v2)) g s slist (var n) =
+        if (contradicts n (const "bool") slist)
+        then raise Contradiction
+        else let (* note: the type of v1 must be more generic than 'var x' *)
+                 val s1 = tycheckexp v1 g s slist (var "x")
+                 val s2 = tycheckexp v2 g s s1 (var "x")
+             in if (contains n (const "bool") s2)
+                then s2
+                else (n, (const "bool"))::s2
+             end
+  | tycheckexp (eqexp (v1, v2)) g s slist (const n) =
+        if (n = "bool")
+        then let val s1 = tycheckexp v1 g s slist (var "x")
+                 val s2 = tycheckexp v2 g s s1 (var "x")
+             in s2
+             end
+        else raise Contradiction 
+  (* note: the actual type of the name must be looked up from some 
+     sort of type environment... *)
+  | tycheckexp (name s') g s slist (var n) = 
+        if (contradicts n (var "y") slist)
+        then raise Contradiction
+        else if (contains n (var "y") slist)
+             then slist
+             else (n, (var "y"))::slist
+  | tycheckexp (ifexp (c, e1, e2)) g s slist ty =
+        let val s1 = tycheckexp c g s slist (const "bool")
+            val s2 = tycheckexp e1 g s s1 ty
+            val s3 = tycheckexp e2 g s s2 ty
+        in s3
+        end
+
+
+
+(*** TEST CASES ***)
+
+
+(* for instanceof, equaltype, and unify *)                  
+
 (* test case 1-- instanceof: true, equaltype: false, unify: true *)             
 val t1 = arrow(const "int", arrow(arrow(const "int", const "int"), const "bool"))
 val t2 = arrow(var "alpha", var "beta")
@@ -142,3 +265,23 @@ val t8 = arrow(var "alpha", const "int")
 (* test case 5-- using constr and app *)
 val t9 = app(constr(1,3), [const "int", const "bool", var "alpha"])
 val t10 = app(constr(1,3), [var "x", var "y", var "z"])
+
+
+(* for tycheckexp *)
+
+(* test case A-- should all return substitution lists *)
+tycheckexp (ival 1) [] [] [] (var "a")
+tycheckexp (bval true) [] [] [] (const "bool")
+tycheckexp (opexpi (MULTIPLY, ival 2, ival 3)) [] [] [("a", const "int")] (var "a")
+tycheckexp (opexpb (OR, bval true, bval false)) [] [] [("a", const "int")] (var "b")
+tycheckexp (eqexp (bval true, bval false)) [] [] [] (const "bool")
+tycheckexp (name "name") [] [] [] (var "a")
+tycheckexp (ifexp (bval true, ival 1, ival 2)) [] [] [] (var "a")
+
+(* test case B-- should all raise Contradiction exceptions *)
+tycheckexp (ival 1) [] [] [("a", const "bool")] (var "a")
+tycheckexp (bval true) [] [] [] (const "int")
+tycheckexp (opexpi (MULTIPLY, ival 2, bval true)) [] [] [("a", const "int")] (var "a")
+tycheckexp (opexpb (OR, bval true, bval false)) [] [] [("a", const "int")] (var "a")
+tycheckexp (eqexp (ival 1, bval false)) [] [] [] (const "bool")
+tycheckexp (ifexp (bval true, ival 1, bval true)) [] [] [] (var "b")
