@@ -54,6 +54,10 @@ fun applysubst (var n) (nil : subst) = (var n)
 (* will instantiate one type with another *)
 fun instant (var n) (var n') = (var n')
 
+(* looks up a type from a list of substitutions *)
+fun lookup n nil = raise Impossible
+  | lookup n ((n',ty)::t) = if n = n' then ty else (lookup n t)
+
 
 
 (*** INSTANCE OF ***)
@@ -224,14 +228,10 @@ fun tycheckexp (ival i) g s slist (var n) =
              in s2
              end
         else raise Contradiction 
-  (* note: the actual type of the name must be looked up from some 
-     sort of type environment... *)
-  | tycheckexp (name s') g s slist (var n) = 
-        if (contradicts n (var "y") slist)
-        then raise Contradiction
-        else if (contains n (var "y") slist)
-             then slist
-             else (n, (var "y"))::slist
+  | tycheckexp (name n) g s slist ty = 
+        let val preexp' = (lookup n g) handle Impossible => (lookup n s)
+        in (tycheckexp preexp' g s slist ty)
+        end
   | tycheckexp (ifexp (c, e1, e2)) g s slist ty =
         let val s1 = tycheckexp c g s slist (const "bool")
             val s2 = tycheckexp e1 g s s1 ty
@@ -275,7 +275,7 @@ tycheckexp (bval true) [] [] [] (const "bool")
 tycheckexp (opexpi (MULTIPLY, ival 2, ival 3)) [] [] [("a", const "int")] (var "a")
 tycheckexp (opexpb (OR, bval true, bval false)) [] [] [("a", const "int")] (var "b")
 tycheckexp (eqexp (bval true, bval false)) [] [] [] (const "bool")
-tycheckexp (name "name") [] [] [] (var "a")
+tycheckexp (name "n") [("n", ival 1)] [] [] (var "x")
 tycheckexp (ifexp (bval true, ival 1, ival 2)) [] [] [] (var "a")
 
 (* test case B-- should all raise Contradiction exceptions *)
@@ -285,3 +285,4 @@ tycheckexp (opexpi (MULTIPLY, ival 2, bval true)) [] [] [("a", const "int")] (va
 tycheckexp (opexpb (OR, bval true, bval false)) [] [] [("a", const "int")] (var "a")
 tycheckexp (eqexp (ival 1, bval false)) [] [] [] (const "bool")
 tycheckexp (ifexp (bval true, ival 1, bval true)) [] [] [] (var "b")
+tycheckexp (name "n") [("n", ival 1)] [] [] (const "bool")
