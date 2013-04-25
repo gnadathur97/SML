@@ -7,8 +7,8 @@ datatype ty = const of string
             | arrow of ty * ty
             | app of ty * ty list
 type subst = (string * ty) list
-exception Contradiction
-exception Impossible
+exception Clash
+exception OccChk
 
 (* pre-abstract syntax datatype *)
 datatype builtin = ADD | SUBTRACT | MULTIPLY | AND | OR
@@ -19,44 +19,65 @@ datatype preexpr = ival of int
                  | eqexp of preexpr * preexpr 
                  | name of string 
                  | ifexp of preexpr * preexpr * preexpr 
-              (* temporarily ignoring the following:
-                 | func of preexpr list * preexpr 
+                 | func of (preexpr list * preexpr) list
                  | apply of preexpr * preexpr list
                  | econst of int * int
-                 | ecase of preexpr * alt list *)
+                 | ecase of preexpr * alt list
+and alt = ALT of int * (preexpr list) * preexpr
 
 
 
 (*** HELPER FUNCTIONS ***)
 
-(* checks if a substitution is currently in the substitutions list *)
-fun contains (v1 : string) (v2 : ty) (nil : subst) = false
-  | contains v1 v2 ((v1',v2')::t) = 
-        if ((v1 = v1') andalso (v2 = v2'))
-        then true
-        else (contains v1 v2 t)
-        
-(* checks if a substitution contradicts the current substitutions *)
-fun contradicts (v1 : string) (v2 : ty) (nil : subst) = false
-  | contradicts v1 v2 ((v1',v2')::t) = 
-        if (v1 = v1')
-        then if (v2 = v2') then false else true
-        else (contradicts v1 v2 t)
-        
-(* applies a substitution to a variable *)
-fun applysubst (var n) (nil : subst) = (var n)
-  | applysubst (var n) ((n',t')::tl) = 
+(* contradicts: string * ty * subst -> boolean *)
+fun contradicts n ty nil = false
+  | contradicts n ty ((n',ty')::tl) = 
+        if (n = n')
+        then if (ty = ty') then false else true
+        else (contradicts n ty tl)
+
+(* occurscheck: string * ty -> bool *)
+fun occurscheck n (const a) = false
+  | occurscheck n1 (var n2) = if n1 = n2 then true else false
+  | occurscheck n (arrow(ty1, ty2)) = 
+        (occurscheck n ty1) orelse (occurscheck n ty2)
+
+(* applysubst': string * subst -> ty *)   
+fun applysubst' n (nil : subst) = (var n)
+  | applysubst' n ((n',t')::tl) = 
         if (n = n')
         then t'
-        else (applysubst (var n) tl)
- | applysubst _ _ = raise Impossible
- 
-(* will instantiate one type with another *)
-fun instant (var n) (var n') = (var n')
+        else (applysubst' n tl)
 
-(* looks up a type from a list of substitutions *)
-fun lookup n nil = raise Impossible
-  | lookup n ((n',ty)::t) = if n = n' then ty else (lookup n t)
+(* applysubst: ty * subst -> ty *) 
+fun applysubst (var n) slist = (applysubst' n slist)
+  | applysubst (const a) slist = (const a)
+  | applysubst (arrow(ty1, ty2)) slist = 
+        arrow((applysubst ty1 slist), (applysubst ty2 slist))
+     
+(* containsubst: string * subst -> bool *)   
+fun containsubst n nil = false
+  | containsubst n ((n',_)::tl) = 
+        if (n = n')
+        then true
+        else (containsubst n tl)
+
+(* compose: subst * subst -> subst 
+   compose': subst * subts * subst -> subst *)
+fun compose subst1 subst2 = 
+        let fun compose' nil nil subst3 = subst3
+              | compose' nil ((n,ty)::tl) subst3 = 
+                    if (containsubst n subst3)
+                    then (compose' nil tl subst3)
+                    else (compose' nil tl ((n,ty)::subst3))      
+              | compose' ((n,ty)::tl) subst2  subst3 = 
+                    let val ty' = (applysubst ty subst2)
+                    in if ty' = var n 
+                       then (compose' tl subst2 subst3) 
+                       else (compose' tl subst2 ((n,ty')::subst3))
+                    end
+        in (compose' subst1 subst2 nil)
+        end
 
 
 
@@ -69,7 +90,7 @@ fun instanceof t (var s) = true
   | instanceof (app(t, nil)) (app(t', nil)) = instanceof t t'
   | instanceof (app(t, h::tl)) (app(t', h'::tl')) =
         (instanceof h h') andalso (instanceof (app(t, tl)) (app(t', tl')))
-  | instanceof t1 t2 = if t1 = t2 then true else false
+  | instanceof t1 t2 = if (t1 = t2) then true else false
         
 
 
@@ -81,12 +102,12 @@ fun equaltype t1 t2 =
         let fun equaltype' (var s1) (var s2) rlist = 
                     if ((contradicts s1 (var s2) rlist) 
                             orelse (contradicts s2 (var s1) rlist))
-                    then raise Contradiction
-                    else if (contains s1 (var s2) rlist)
-                         then if (contains s2 (var s1) rlist)
+                    then raise Clash
+                    else if (containsubst s1 rlist)
+                         then if (containsubst s2 rlist)
                               then rlist
                               else ((s2, (var s1))::rlist)
-                         else if (contains s2 (var s1) rlist)
+                         else if (containsubst s2 rlist)
                               then ((s1, (var s2))::rlist)
                               else ((s1, (var s2))::(s2, (var s1))::rlist)
               | equaltype' (arrow(t1, t2)) (arrow(t1', t2')) rlist = 
@@ -96,8 +117,8 @@ fun equaltype t1 t2 =
               | equaltype' (app(t, h::tl)) (app(t', h'::tl')) rlist =
                    (equaltype' h h'(equaltype' (app(t,tl)) (app(t',tl')) rlist))
               | equaltype' t1 t2 rlist = 
-                    if t1 = t2 then rlist else raise Contradiction
-        in (true, (equaltype' t1 t2 nil)) handle Contradiction => (false, nil)
+                    if t1 = t2 then rlist else raise Clash
+        in (true, (equaltype' t1 t2 nil)) handle Clash => (false, nil)
         end
 
 
@@ -105,49 +126,50 @@ fun equaltype t1 t2 =
 (*** UNIFY ***)
 (* function to check if two types can be reduced to a common type, 
    the result is true/false and the necessary substitutions *)
-
-fun unify nil = (false, nil)
-  | unify typelist = 
-        let fun unify' (var n1) (var n2) slist =
-                    if ((contradicts n1 (var n2) slist) 
-                            orelse (contradicts n2 (var n1) slist))
-                    then raise Contradiction
-                    else if (contains n1 (var n2) slist)
-                         then if (contains n2 (var n1) slist)
-                              then slist
-                              else ((n2, (var n1))::slist)
-                         else if (contains n2 (var n1) slist)
-                              then ((n1, (var n2))::slist)
-                              else ((n1, (var n2))::(n2, (var n1))::slist)
-              | unify' t (var n) slist = 
-                    if (contradicts n t slist) 
-                    then raise Contradiction 
-                    else if (contains n t slist)
-                         then slist
-                         else ((n, t)::slist)
-              | unify' (var n) t slist = 
-                    if (contradicts n t slist)
-                    then raise Contradiction
-                    else if (contains n t slist)
-                         then slist
-                         else ((n, t)::slist)
-              | unify' (arrow(t1, t2)) (arrow(t1', t2')) slist = 
-                    (unify' t1 t1' (unify' t2 t2' slist))
-              | unify' (app(t, nil)) (app(t', nil)) slist = 
-                    (unify' t t' slist)
-              | unify' (app(t, h::tl)) (app(t', h'::tl')) slist =
-                    (unify' h h'(unify' (app(t,tl)) (app(t',tl')) slist))
-              | unify' t1 t2 slist =
-                    if t1 = t2 then slist else raise Contradiction
-            fun unify'' nil slist = slist
-              | unify'' ((t1, t2)::tl) slist = (unify'' tl (unify' t1 t2 slist))
-        in (true, (unify'' typelist nil)) handle Contradiction => (false, nil)
+   
+(* unify: (ty * ty) list -> bool * subst
+   unify': (ty * ty) list * subst -> subst
+   unifypair: (ty * ty) -> subst *)        
+   
+fun unifypair (var n) ty = if ty = (var n) 
+                           then [] 
+                           else if (occurscheck n ty) 
+                                then raise OccChk 
+                                else [(n, ty)]
+  | unifypair ty (var n) = if ty = (var n) 
+                           then [] 
+                           else if (occurscheck n ty) 
+                                then raise OccChk 
+                                else [(n, ty)]
+  | unifypair (const n1) (const n2) = if n1 = n2 then [] else raise Clash
+  | unifypair (const n) _ = raise Clash
+  | unifypair (arrow(ty1, ty3)) (arrow(ty2, ty4)) = 
+        let val subst = (unifypair ty1 ty2)
+            val ty3' = (applysubst ty3 subst)
+            val ty4' = (applysubst ty4 subst)
+            val subst' = (unifypair ty3' ty4')
+        in (compose subst subst')
         end
+  | unifypair (arrow(ty1, ty3)) _ = raise Clash
+
+fun unify' nil subst = subst
+  | unify' ((ty1,ty2)::tl) subst =
+        let val ty1' = (applysubst ty1 subst)
+            val ty2' = (applysubst ty2 subst)
+            val subst' = (unifypair ty1' ty2') @ subst
+        in (unify' tl subst')
+        end
+    
+fun unify tylist = 
+        (true, (unify' tylist [])) handle Clash => (false, [])
+                                   handle OccChk => (false, [])
         
 
 
 (*** EXPRESSION CHECKER ***)
 (* a function to check the type of a provided pre-expression *)
+
+(* the rest of this is commented out until I get around to fixing it...
 
 (* Description: tycheckexp : preexp * tyenv * tyenv * subst * ty -> subst
    preexp-- the expression we want to check
@@ -241,8 +263,31 @@ fun tycheckexp (ival i) g s slist (var n) =
 
 
 
-(*** TEST CASES ***)
+(*** CLAUSE CHECKER ***)
+(* a function to check the type of one clause of a function definition *)
 
+(* Description: tycheckclause : arglist * body * ctx * sign * subst * ty -> subst
+   Step 1: match arglist types with argtys (argtys -> restype)
+           add stuff to ctx (ctx=gamma, sign=sigma)
+           modify subst as needed
+   Step 2: type check body using mod ctx, sign, mod subst, restype *)
+
+fun tycheckclause nil body ctx sign slist ty =
+        (tycheckexp body ctx sign slist ty)
+  | tycheckclause (arg::tl) body ctx sign slist ty =
+        (* once again, a more general variable than 'x' must be used *)
+        let val slist' = (tycheckexp arg ctx sign slist (var "x"))
+        in (tycheckclause tl body ctx sign slist' ty)
+        end
+
+
+
+(*** DEFINITION CHECKER ***)
+(* a function to check the type of each clause to check the type of a function *)
+
+
+
+(*** TEST CASES ***)
 
 (* for instanceof, equaltype, and unify *)                  
 
@@ -266,6 +311,14 @@ val t8 = arrow(var "alpha", const "int")
 val t9 = app(constr(1,3), [const "int", const "bool", var "alpha"])
 val t10 = app(constr(1,3), [var "x", var "y", var "z"])
 
+unify [(var "y", arrow(const "int",const "int")), 
+       (var "x", const "bool"), 
+       (var "z", arrow(var "x", var "y"))];
+       
+unify [(var "x", const "int"), 
+       (var "y", arrow(var "x", const "string")), 
+       (arrow(const "bool", const "int"), var "x")]
+
 
 (* for tycheckexp *)
 
@@ -286,3 +339,5 @@ tycheckexp (opexpb (OR, bval true, bval false)) [] [] [("a", const "int")] (var 
 tycheckexp (eqexp (ival 1, bval false)) [] [] [] (const "bool")
 tycheckexp (ifexp (bval true, ival 1, bval true)) [] [] [] (var "b")
 tycheckexp (name "n") [("n", ival 1)] [] [] (const "bool")
+
+*)
